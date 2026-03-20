@@ -1,0 +1,50 @@
+{
+  "id": "mock-upload-001",
+  "name": "Mock Parsed Upload",
+  "tiles": [
+    { "id": "tile-0", "index": 0, "name": "GO", "type": "GO" },
+    { "id": "tile-1", "index": 1, "name": "Lime Street", "type": "PROPERTY", "price": 80, "rents": [8], "colorGroup": "LIME" },
+    { "id": "tile-2", "index": 2, "name": "Community Chest", "type": "COMMUNITY_CHEST" },
+    { "id": "tile-3", "index": 3, "name": "Berry Station", "type": "RAILROAD", "price": 200, "rents": [25, 50, 100, 200] },
+    { "id": "tile-4", "index": 4, "name": "Chance", "type": "CHANCE" },
+    { "id": "tile-5", "index": 5, "name": "Jail", "type": "JAIL" },
+    { "id": "tile-6", "index": 6, "name": "Solar Utility", "type": "UTILITY", "price": 150, "rents": [4, 10] },
+    { "id": "tile-7", "index": 7, "name": "Crimson Avenue", "type": "PROPERTY", "price": 120, "rents": [12], "colorGroup": "CRIMSON" },
+    { "id": "tile-8", "index": 8, "name": "Tax Office", "type": "TAX", "taxAmount": 100 },
+    { "id": "tile-9", "index": 9, "name": "Free Parking", "type": "FREE_PARKING" },
+    { "id": "tile-10", "index": 10, "name": "Go To Jail", "type": "GO_TO_JAIL" },
+    { "id": "tile-11", "index": 11, "name": "Navy Lane", "type": "PROPERTY", "price": 140, "rents": [14], "colorGroup": "NAVY" }
+  ],
+  "chanceDeck": [
+    {
+      "id": "chance-1",
+      "deck": "CHANCE",
+      "text": "Advance to GO. Collect $200.",
+      "effect": { "type": "MOVE_TO", "tileIndex": 0, "collectGo": true }
+    },
+    {
+      "id": "chance-2",
+      "deck": "CHANCE",
+      "text": "Pay $25",
+      "effect": { "type": "PAY_MONEY", "amount": 25 }
+    }
+  ],
+  "communityChestDeck": [
+    {
+      "id": "cc-1",
+      "deck": "COMMUNITY_CHEST",
+      "text": "Collect $50",
+      "effect": { "type": "GAIN_MONEY", "amount": 50 }
+    }
+  ],
+  "rules": {
+    "startCash": 1500,
+    "passGoAmount": 200,
+    "jailFine": 50,
+    "auctionEnabled": true,
+    "bankruptcyFloor": 0
+  },
+  "metadata": {
+    "source": "mock"
+  }
+}

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 180">
+  <rect width="300" height="180" fill="#fee2e2"/>
+  <text x="20" y="70" font-size="22">Illinois Avenue</text>
+  <text x="20" y="110" font-size="18">Price 240</text>
+  <text x="20" y="140" font-size="18">Rent 20</text>
+</svg>

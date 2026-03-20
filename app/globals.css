@@ -1,0 +1,322 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f5f5ef;
+  --card: #ffffff;
+  --ink: #1b1f24;
+  --accent: #0f766e;
+  --accent-soft: #99f6e4;
+  --warn: #9a3412;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 20%, #d1fae5 0%, #f5f5ef 42%),
+    linear-gradient(140deg, #f5f5ef 0%, #e9f5ee 100%);
+  color: var(--ink);
+  font-family: "Trebuchet MS", "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid #d7ded9;
+  border-radius: 14px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.07);
+}
+
+.btn {
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
+  border: 1px solid transparent;
+  font-weight: 700;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #ecfeff;
+}
+
+.btn-ghost {
+  background: #ffffff;
+  border-color: #99a4a0;
+  color: #1f2937;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid #b8c4be;
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  background: #fbfffd;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.6rem;
+  font-weight: 700;
+  background: var(--accent-soft);
+  color: #134e4a;
+}
+
+.board-shell {
+  width: 100%;
+}
+
+.board-grid {
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(14, minmax(0, 1fr));
+  grid-template-rows: repeat(8, minmax(0, 1fr));
+  gap: 4px;
+  aspect-ratio: 19 / 8;
+  background: #f1f5f9;
+  padding: 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+}
+
+.board-center {
+  grid-row: 2 / 8;
+  grid-column: 2 / 14;
+  border-radius: 12px;
+  border: 2px dashed #94a3b8;
+  background: linear-gradient(160deg, #ffffff, #f8fafc);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-direction: column;
+  text-align: center;
+  padding: 0.75rem;
+}
+
+.board-tile {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.board-tile-active {
+  outline: 2px solid #0f766e;
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.2);
+}
+
+.board-tile-band {
+  height: 10px;
+  width: 100%;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.12);
+}
+
+.board-tile-inner {
+  padding: 0.22rem;
+}
+
+.board-tile-index {
+  font-size: 0.52rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.board-tile-name {
+  font-size: 0.49rem;
+  line-height: 1.02;
+  font-weight: 800;
+  margin-top: 0.1rem;
+  color: #0f172a;
+  display: block;
+  word-break: break-word;
+}
+
+.board-tile-meta {
+  font-size: 0.48rem;
+  margin-top: 0.1rem;
+  color: #0369a1;
+  font-weight: 700;
+}
+
+.board-tile-owner {
+  font-size: 0.46rem;
+  margin-top: 0.1rem;
+  color: #0f766e;
+  font-weight: 700;
+}
+
+.board-pawns {
+  margin-top: 0.2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.board-pawn-pill {
+  border-radius: 999px;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+  color: #14532d;
+  font-size: 0.44rem;
+  font-weight: 800;
+  padding: 0.04rem 0.24rem;
+}
+
+@media (max-width: 1280px) {
+  .board-grid {
+    aspect-ratio: 16 / 10;
+    grid-template-columns: repeat(14, minmax(0, 1fr));
+    grid-template-rows: repeat(8, minmax(0, 1fr));
+  }
+
+  .board-tile-owner {
+    display: none;
+  }
+}
+
+.dice-tray {
+  margin-top: 0.45rem;
+  display: flex;
+  gap: 0.4rem;
+}
+
+.die-face {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 0.45rem;
+  border: 1px solid #94a3b8;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 900;
+  color: #0f172a;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
+}
+
+.dice-tray-rolling .die-face {
+  animation: diceShake 180ms linear infinite;
+}
+
+.center-card {
+  margin-top: 0.55rem;
+  width: min(92%, 680px);
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+}
+
+.center-card-pending {
+  animation: centerCardPop 320ms ease-out, centerCardPulse 1.4s ease-in-out infinite;
+}
+
+.center-card-band {
+  height: 12px;
+  width: 100%;
+}
+
+.center-card-body {
+  padding: 0.65rem 0.8rem;
+}
+
+.center-card-kicker {
+  font-size: 0.67rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 800;
+  color: #475569;
+}
+
+.center-card-title {
+  margin-top: 0.1rem;
+  font-size: 1.15rem;
+  line-height: 1.2;
+  font-weight: 900;
+  color: #0f172a;
+}
+
+.center-card-type {
+  margin-top: 0.08rem;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.center-card-row {
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: #1e293b;
+}
+
+.center-card-waiting {
+  margin-top: 0.4rem;
+  display: inline-block;
+  border-radius: 999px;
+  border: 1px solid #f59e0b;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 0.12rem 0.5rem;
+}
+
+.center-double-badge {
+  margin-top: 0.4rem;
+  display: inline-block;
+  border-radius: 999px;
+  border: 1px solid #16a34a;
+  background: #dcfce7;
+  color: #14532d;
+  font-size: 0.7rem;
+  font-weight: 800;
+  padding: 0.14rem 0.55rem;
+}
+
+@keyframes centerCardPop {
+  0% {
+    transform: scale(0.97);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes centerCardPulse {
+  0% {
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08), 0 0 0 0 rgba(245, 158, 11, 0.28);
+  }
+  70% {
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08), 0 0 0 9px rgba(245, 158, 11, 0.02);
+  }
+  100% {
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08), 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+
+@keyframes diceShake {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  25% {
+    transform: translate(1px, -1px) rotate(-2deg);
+  }
+  50% {
+    transform: translate(-1px, 1px) rotate(2deg);
+  }
+  75% {
+    transform: translate(1px, 1px) rotate(-1deg);
+  }
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+}

@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum GameStatus {
+  SETUP
+  IN_PROGRESS
+  FINISHED
+}
+
+enum BoardSource {
+  DEFAULT
+  GENERATED
+  UPLOADED
+}
+
+enum DeckType {
+  CHANCE
+  COMMUNITY_CHEST
+}
+
+model BoardConfig {
+  id           String               @id @default(cuid())
+  name         String
+  source       BoardSource
+  data         Json
+  createdAt    DateTime             @default(now())
+  games        Game[]
+  properties   PropertyDefinition[]
+  cards        ParsedCard[]
+  parseSession AssetParseSession?
+}
+
+model Game {
+  id            String        @id @default(cuid())
+  name          String
+  status        GameStatus    @default(SETUP)
+  boardConfig   BoardConfig   @relation(fields: [boardConfigId], references: [id])
+  boardConfigId String
+  state         Json
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  players       Player[]
+  turns         Turn[]
+  transactions  Transaction[]
+  logs          GameLog[]
+}
+
+model Player {
+  id          String   @id @default(cuid())
+  game        Game     @relation(fields: [gameId], references: [id])
+  gameId      String
+  name        String
+  token       String
+  accessToken String   @unique
+  seatOrder   Int
+  createdAt   DateTime @default(now())
+
+  @@unique([gameId, seatOrder])
+}
+
+model Turn {
+  id         String   @id @default(cuid())
+  game       Game     @relation(fields: [gameId], references: [id])
+  gameId     String
+  turnNumber Int
+  playerId   String
+  phase      String
+  diceOne    Int?
+  diceTwo    Int?
+  createdAt  DateTime @default(now())
+}
+
+model Transaction {
+  id           String   @id @default(cuid())
+  game         Game     @relation(fields: [gameId], references: [id])
+  gameId       String
+  turnNumber   Int
+  fromPlayerId String?
+  toPlayerId   String?
+  amount       Int
+  reason       String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+}
+
+model GameLog {
+  id         String   @id @default(cuid())
+  game       Game     @relation(fields: [gameId], references: [id])
+  gameId     String
+  turnNumber Int?
+  eventType  String
+  message    String
+  payload    Json?
+  createdAt  DateTime @default(now())
+}
+
+model PropertyDefinition {
+  id            String      @id @default(cuid())
+  boardConfig   BoardConfig @relation(fields: [boardConfigId], references: [id])
+  boardConfigId String
+  tileIndex     Int
+  name          String
+  tileType      String
+  colorGroup    String?
+  price         Int?
+  rents         Json?
+}
+
+model ParsedCard {
+  id            String      @id @default(cuid())
+  boardConfig   BoardConfig @relation(fields: [boardConfigId], references: [id])
+  boardConfigId String
+  deckType      DeckType
+  name          String?
+  text          String
+  effect        Json
+}
+
+model AssetParseSession {
+  id             String      @id @default(cuid())
+  boardConfig    BoardConfig @relation(fields: [boardConfigId], references: [id])
+  boardConfigId  String      @unique
+  status         String
+  assetsManifest Json
+  draftJson      Json
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+}
