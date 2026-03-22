@@ -26,6 +26,8 @@ export function createInitialGameState(input: CreateGameInput): GameState {
     ownership: {},
     transactions: [],
     logs: [],
+    propertyHouses: {},
+    pendingTrades: [],
     futureModifiers: []
   };
 }

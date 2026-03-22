@@ -94,6 +94,17 @@ const gameEventSchema = z.object({
   payload: z.record(z.unknown()).optional()
 });
 
+const tradeOfferSchema = z.object({
+  id: z.string(),
+  fromPlayerId: z.string(),
+  toPlayerId: z.string(),
+  offeredCash: z.number().int().nonnegative(),
+  requestedCash: z.number().int().nonnegative(),
+  offeredTileIds: z.array(z.string()),
+  requestedTileIds: z.array(z.string()),
+  createdAtTurn: z.number().int().positive()
+});
+
 export const gameStateSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -146,6 +157,7 @@ export const gameStateSchema = z.object({
       amount: z.number().int().nonnegative()
     })
     .optional(),
+  propertyHouses: z.record(z.number().int().min(1).max(5)).default({}),
   auction: z
     .object({
       tileIndex: z.number().int(),
@@ -154,6 +166,7 @@ export const gameStateSchema = z.object({
       bids: z.record(z.number().int())
     })
     .optional(),
+  pendingTrades: z.array(tradeOfferSchema).default([]),
   transactions: z.array(transactionSchema),
   logs: z.array(gameEventSchema),
   winnerPlayerId: z.string().optional(),
@@ -184,8 +197,23 @@ export const createGameInputSchema = z.object({
 
 export const actionRequestSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ROLL_DICE") }),
+  z.object({ type: z.literal("PAY_JAIL_FINE") }),
+  z.object({ type: z.literal("USE_GET_OUT_OF_JAIL_CARD") }),
   z.object({ type: z.literal("ACTIVATE_TILE_EFFECT") }),
   z.object({ type: z.literal("PAY_RENT") }),
+  z.object({ type: z.literal("BUILD_HOUSE"), tileId: z.string() }),
+  z.object({
+    type: z.literal("PROPOSE_TRADE"),
+    fromPlayerId: z.string(),
+    toPlayerId: z.string(),
+    offeredCash: z.number().int().nonnegative(),
+    requestedCash: z.number().int().nonnegative(),
+    offeredTileIds: z.array(z.string()),
+    requestedTileIds: z.array(z.string())
+  }),
+  z.object({ type: z.literal("ACCEPT_TRADE"), tradeId: z.string(), playerId: z.string() }),
+  z.object({ type: z.literal("REJECT_TRADE"), tradeId: z.string(), playerId: z.string() }),
+  z.object({ type: z.literal("CANCEL_TRADE"), tradeId: z.string(), playerId: z.string() }),
   z.object({
     type: z.literal("PLACE_AUCTION_BID"),
     playerId: z.string(),

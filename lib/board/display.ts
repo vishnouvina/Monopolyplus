@@ -112,3 +112,51 @@ export function baseRent(tile?: TileDefinition | null): number | undefined {
 
   return tile.rents?.[0];
 }
+
+export function houseCostFromTile(tile: TileDefinition): number {
+  if (tile.houseCost && tile.houseCost > 0) {
+    return tile.houseCost;
+  }
+
+  const group = tile.colorGroup?.toUpperCase() ?? "";
+  if (group === "BROWN" || group === "LIGHT_BLUE") {
+    return 50;
+  }
+  if (group === "PINK" || group === "ORANGE") {
+    return 100;
+  }
+  if (group === "RED" || group === "YELLOW") {
+    return 150;
+  }
+  return 200;
+}
+
+export function rentSchedule(tile?: TileDefinition | null): Array<{ label: string; amount: number }> {
+  if (!tile || !isPurchasableTile(tile) || !tile.rents?.length) {
+    return [];
+  }
+
+  if (tile.type === "PROPERTY") {
+    if (tile.rents.length === 1) {
+      return [{ label: "Rent", amount: tile.rents[0] }];
+    }
+
+    const labels = ["1 House", "2 Houses", "3 Houses", "4 Houses", "Hotel"];
+    return tile.rents.slice(1).map((amount, index) => ({
+      label: labels[index] ?? `${index + 1} Houses`,
+      amount
+    }));
+  }
+
+  if (tile.type === "RAILROAD") {
+    return tile.rents.map((amount, index) => ({
+      label: `${index + 1} Railroad${index + 1 > 1 ? "s" : ""}`,
+      amount
+    }));
+  }
+
+  return tile.rents.map((amount, index) => ({
+    label: index === 0 ? "1 Utility (x4 roll)" : "2 Utilities (x10 roll)",
+    amount
+  }));
+}

@@ -3,7 +3,7 @@
 import { QRCodeSVG } from "qrcode.react";
 import { useCallback, useEffect, useState } from "react";
 import { BoardOverview } from "@/components/BoardOverview";
-import { baseRent, tileAccentColor, tilePrice } from "@/lib/board/display";
+import { rentSchedule, tileAccentColor, tilePrice } from "@/lib/board/display";
 import { GameState } from "@/lib/domain/types";
 
 type HostPayload = {
@@ -102,6 +102,8 @@ export function HostDashboard({ gameId }: { gameId: string }) {
 
   const state = payload.state;
   const currentPlayer = state.players[state.currentPlayerIndex];
+  const canPayJailFine = state.phase === "AWAITING_ROLL" && currentPlayer.inJail && currentPlayer.cash >= state.board.rules.jailFine;
+  const canUseJailCard = state.phase === "AWAITING_ROLL" && currentPlayer.inJail && currentPlayer.getOutOfJailCards > 0;
 
   return (
     <main className="mx-auto max-w-[96rem] px-4 py-6">
@@ -139,6 +141,12 @@ export function HostDashboard({ gameId }: { gameId: string }) {
               onClick={handleRollAction}
             >
               Roll Dice
+            </button>
+            <button className={`btn ${canPayJailFine ? "btn-primary" : "btn-ghost"}`} disabled={pending || !canPayJailFine} onClick={() => sendAction({ type: "PAY_JAIL_FINE" })}>
+              Pay Jail Fine
+            </button>
+            <button className={`btn ${canUseJailCard ? "btn-primary" : "btn-ghost"}`} disabled={pending || !canUseJailCard} onClick={() => sendAction({ type: "USE_GET_OUT_OF_JAIL_CARD" })}>
+              Use Jail Card
             </button>
             <button
               className={`btn ${state.phase === "AWAITING_EFFECT_ACTIVATION" ? "btn-primary" : "btn-ghost"}`}
@@ -179,10 +187,14 @@ export function HostDashboard({ gameId }: { gameId: string }) {
                     <div className="h-2 w-full" style={{ backgroundColor: tileAccentColor(auctionTile) }} />
                     <div className="p-2">
                       <p className="font-semibold">{auctionTile.name}</p>
-                      <p className="text-xs text-slate-600">
-                        Price: {tilePrice(auctionTile) ? `$${tilePrice(auctionTile)}` : "N/A"}
-                        {baseRent(auctionTile) ? ` · Base Rent: $${baseRent(auctionTile)}` : ""}
-                      </p>
+                      <p className="text-xs text-slate-600">Price: {tilePrice(auctionTile) ? `$${tilePrice(auctionTile)}` : "N/A"}</p>
+                      <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-700">
+                        {rentSchedule(auctionTile).map((entry) => (
+                          <p key={`${auctionTile.id}-${entry.label}`}>
+                            {entry.label}: ${entry.amount}
+                          </p>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 );

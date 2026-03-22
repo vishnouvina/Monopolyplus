@@ -1,5 +1,6 @@
 import { BoardSource, GameStatus, Prisma } from "@prisma/client";
 import { createDefaultBoardConfig } from "@/lib/board/defaultBoard";
+import { houseCostFromTile } from "@/lib/board/display";
 import { actionRequestSchema, boardSchema, gameStateSchema } from "@/lib/domain/schemas";
 import { BoardDefinition, GameAction } from "@/lib/domain/types";
 import { createInitialGameState } from "@/lib/engine/gameFactory";
@@ -247,6 +248,26 @@ export async function getPlayerSession(token: string) {
   const isPlayersTurn = state.players[state.currentPlayerIndex].id === player.id;
 
   const canBidAuction = state.phase === "AUCTION" && Boolean(state.auction?.participants.includes(player.id));
+  const canProposeTrade = !playerState.bankrupt;
+  const canRespondTrade = !playerState.bankrupt && state.pendingTrades.some((trade) => trade.toPlayerId === player.id);
+  const canPayJailFine =
+    isPlayersTurn && state.phase === "AWAITING_ROLL" && playerState.inJail && playerState.cash >= state.board.rules.jailFine;
+  const canUseGetOutOfJailCard =
+    isPlayersTurn && state.phase === "AWAITING_ROLL" && playerState.inJail && playerState.getOutOfJailCards > 0;
+  const canBuildHouse =
+    isPlayersTurn &&
+    state.phase === "AWAITING_END_TURN" &&
+    playerState.properties.some((tileId) => {
+      const tile = state.board.tiles.find((candidate) => candidate.id === tileId);
+      if (!tile || tile.type !== "PROPERTY") {
+        return false;
+      }
+      const currentHouses = state.propertyHouses?.[tile.id] ?? 1;
+      if (currentHouses >= 5) {
+        return false;
+      }
+      return playerState.cash >= houseCostFromTile(tile);
+    });
 
   return {
     gameId: player.gameId,
@@ -256,20 +277,30 @@ export async function getPlayerSession(token: string) {
     availableActions: isPlayersTurn
       ? {
           canRoll: state.phase === "AWAITING_ROLL",
+          canProposeTrade,
+          canRespondTrade,
+          canPayJailFine,
+          canUseGetOutOfJailCard,
           canActivateEffect: state.phase === "AWAITING_EFFECT_ACTIVATION",
           canPayRent: state.phase === "AWAITING_RENT_PAYMENT",
           canBuy: state.phase === "AWAITING_PURCHASE_DECISION",
           canDecline: state.phase === "AWAITING_PURCHASE_DECISION",
           canBidAuction,
+          canBuildHouse,
           canEndTurn: state.phase === "AWAITING_END_TURN"
         }
       : {
           canRoll: false,
+          canProposeTrade,
+          canRespondTrade,
+          canPayJailFine: false,
+          canUseGetOutOfJailCard: false,
           canActivateEffect: false,
           canPayRent: false,
           canBuy: false,
           canDecline: false,
           canBidAuction,
+          canBuildHouse: false,
           canEndTurn: false
         }
   };

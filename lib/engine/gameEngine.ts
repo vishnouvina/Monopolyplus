@@ -1,4 +1,4 @@
-import { EffectDefinition, GameAction, GameEvent, GameState, PendingEffect, PlayerState, TileDefinition, TransactionEntry } from "@/lib/domain/types";
+import { EffectDefinition, GameAction, GameEvent, GameState, PendingEffect, PlayerState, TileDefinition, TradeOffer, TransactionEntry } from "@/lib/domain/types";
 import { rollDice } from "@/lib/engine/dice";
 
 function getCurrentPlayer(state: GameState): PlayerState {
@@ -37,6 +37,10 @@ function appendTransaction(
 
 function getTile(state: GameState, index: number): TileDefinition {
   return state.board.tiles[index];
+}
+
+function getTileById(state: GameState, tileId: string): TileDefinition | undefined {
+  return state.board.tiles.find((tile) => tile.id === tileId);
 }
 
 function getPlayerById(state: GameState, playerId: string): PlayerState | undefined {
@@ -114,14 +118,41 @@ function maybeHandleBankruptcy(state: GameState, events: GameEvent[], playerId: 
     if (creditor && !creditor.bankrupt) {
       state.ownership[tileId] = creditor.id;
       creditor.properties.push(tileId);
+      if (!state.propertyHouses[tileId]) {
+        state.propertyHouses[tileId] = 1;
+      }
     } else {
       delete state.ownership[tileId];
+      delete state.propertyHouses[tileId];
     }
   }
 
   player.properties = [];
-
+  state.pendingTrades = state.pendingTrades.filter((trade) => trade.fromPlayerId !== player.id && trade.toPlayerId !== player.id);
   appendEvent(events, state, "BANKRUPTCY", `${player.name} is bankrupt.`);
+}
+
+function removeTileFromPlayer(player: PlayerState, tileId: string) {
+  player.properties = player.properties.filter((id) => id !== tileId);
+}
+
+function addTileToPlayer(player: PlayerState, tileId: string) {
+  if (!player.properties.includes(tileId)) {
+    player.properties.push(tileId);
+  }
+}
+
+function transferTile(state: GameState, tileId: string, fromPlayer: PlayerState, toPlayer: PlayerState) {
+  removeTileFromPlayer(fromPlayer, tileId);
+  addTileToPlayer(toPlayer, tileId);
+  state.ownership[tileId] = toPlayer.id;
+  if (!state.propertyHouses[tileId]) {
+    state.propertyHouses[tileId] = 1;
+  }
+}
+
+function uniqueIds(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function movePlayerBy(state: GameState, events: GameEvent[], player: PlayerState, steps: number) {
@@ -150,8 +181,43 @@ function sendToJail(state: GameState, events: GameEvent[], player: PlayerState) 
   appendEvent(events, state, "JAIL", `${player.name} was sent to jail.`);
 }
 
+function getHouseCost(tile: TileDefinition): number {
+  if (tile.houseCost && tile.houseCost > 0) {
+    return tile.houseCost;
+  }
+
+  const group = tile.colorGroup?.toUpperCase() ?? "";
+  if (group === "BROWN" || group === "LIGHT_BLUE") {
+    return 50;
+  }
+  if (group === "PINK" || group === "ORANGE") {
+    return 100;
+  }
+  if (group === "RED" || group === "YELLOW") {
+    return 150;
+  }
+  return 200;
+}
+
 function propertyGroupOwnedCount(state: GameState, ownerId: string, type: "RAILROAD" | "UTILITY"): number {
   return state.board.tiles.filter((tile) => tile.type === type && state.ownership[tile.id] === ownerId).length;
+}
+
+function ownsFullColorGroup(state: GameState, ownerId: string, colorGroup?: string): boolean {
+  if (!colorGroup) {
+    return false;
+  }
+
+  const groupKey = colorGroup.trim().toUpperCase();
+  const groupTiles = state.board.tiles.filter(
+    (tile) => tile.type === "PROPERTY" && tile.colorGroup?.trim().toUpperCase() === groupKey
+  );
+
+  if (groupTiles.length === 0) {
+    return false;
+  }
+
+  return groupTiles.every((tile) => state.ownership[tile.id] === ownerId);
 }
 
 function calculateRent(state: GameState, tile: TileDefinition, ownerId: string): number {
@@ -166,7 +232,19 @@ function calculateRent(state: GameState, tile: TileDefinition, ownerId: string):
     return (state.lastRoll?.total ?? 7) * multiplier;
   }
 
-  return tile.rents?.[0] ?? 0;
+  const houses = Math.max(1, state.propertyHouses[tile.id] ?? 1);
+  if (!tile.rents || tile.rents.length === 0) {
+    return 0;
+  }
+  if (tile.rents.length === 1) {
+    return tile.rents[0];
+  }
+  const index = Math.min(houses, tile.rents.length - 1);
+  const baseRent = tile.rents[index];
+  if (ownsFullColorGroup(state, ownerId, tile.colorGroup)) {
+    return baseRent * 2;
+  }
+  return baseRent;
 }
 
 function startAuction(state: GameState, events: GameEvent[], tileIndex: number) {
@@ -195,9 +273,9 @@ function enqueuePendingEffect(state: GameState, events: GameEvent[], player: Pla
 
 function enqueueCardEffect(state: GameState, events: GameEvent[], player: PlayerState, deckType: "CHANCE" | "COMMUNITY_CHEST", tileIndex: number) {
   if (deckType === "CHANCE") {
-    const idx = state.chancePointer % state.board.chanceDeck.length;
+    const idx = Math.floor(Math.random() * state.board.chanceDeck.length);
     const card = state.board.chanceDeck[idx];
-    state.chancePointer += 1;
+    state.chancePointer = idx;
     appendEvent(events, state, "CARD_DRAW", `${player.name} drew Chance: ${card.text}`);
     enqueuePendingEffect(state, events, player, {
       tileIndex,
@@ -210,9 +288,9 @@ function enqueueCardEffect(state: GameState, events: GameEvent[], player: Player
     return;
   }
 
-  const idx = state.communityPointer % state.board.communityChestDeck.length;
+  const idx = Math.floor(Math.random() * state.board.communityChestDeck.length);
   const card = state.board.communityChestDeck[idx];
-  state.communityPointer += 1;
+  state.communityPointer = idx;
   appendEvent(events, state, "CARD_DRAW", `${player.name} drew Community Chest: ${card.text}`);
   enqueuePendingEffect(state, events, player, {
     tileIndex,
@@ -290,17 +368,10 @@ function resolveCardEffect(
   if (effect.type === "GET_OUT_OF_JAIL") {
     player.getOutOfJailCards += 1;
     appendEvent(events, state, "CARD_EFFECT", `${player.name} gained a Get Out of Jail card.`);
-    return;
   }
 }
 
-function resolveLanding(
-  state: GameState,
-  events: GameEvent[],
-  txns: TransactionEntry[],
-  player: PlayerState,
-  depth = 0
-): void {
+function resolveLanding(state: GameState, events: GameEvent[], txns: TransactionEntry[], player: PlayerState, depth = 0): void {
   if (depth > 4 || state.phase === "GAME_OVER" || player.bankrupt) {
     return;
   }
@@ -398,19 +469,16 @@ function resolveRollAction(state: GameState, events: GameEvent[], txns: Transact
   if (player.bankrupt) {
     throw new Error("Bankrupt players cannot act.");
   }
+
   state.pendingEffect = undefined;
+  state.pendingRent = undefined;
 
   const roll = rollDice(forcedDice);
   state.lastRoll = roll;
   appendEvent(events, state, "DICE_ROLL", `${player.name} rolled ${roll.dieOne} + ${roll.dieTwo} = ${roll.total}.`);
 
   if (player.inJail) {
-    if (player.getOutOfJailCards > 0) {
-      player.getOutOfJailCards -= 1;
-      player.inJail = false;
-      player.jailTurns = 0;
-      appendEvent(events, state, "JAIL_EXIT", `${player.name} used a Get Out of Jail card.`);
-    } else if (roll.isDouble) {
+    if (roll.isDouble) {
       player.inJail = false;
       player.jailTurns = 0;
       appendEvent(events, state, "JAIL_EXIT", `${player.name} rolled doubles and left jail.`);
@@ -418,9 +486,11 @@ function resolveRollAction(state: GameState, events: GameEvent[], txns: Transact
       player.jailTurns += 1;
       if (player.jailTurns >= 3) {
         transferCash(state, events, txns, state.board.rules.jailFine, "Jail fine", player.id, undefined);
-        player.inJail = false;
-        player.jailTurns = 0;
-        appendEvent(events, state, "JAIL_FINE", `${player.name} paid $${state.board.rules.jailFine} to leave jail.`);
+        if (!player.bankrupt) {
+          player.inJail = false;
+          player.jailTurns = 0;
+          appendEvent(events, state, "JAIL_FINE", `${player.name} paid $${state.board.rules.jailFine} to leave jail.`);
+        }
       } else {
         state.phase = "AWAITING_END_TURN";
         appendEvent(events, state, "JAIL_STAY", `${player.name} remains in jail.`);
@@ -429,10 +499,57 @@ function resolveRollAction(state: GameState, events: GameEvent[], txns: Transact
     }
   }
 
+  if (player.bankrupt) {
+    return;
+  }
+
   movePlayerBy(state, events, player, roll.total);
   resolveLanding(state, events, txns, player);
   maybeFinalizeWinner(state, events);
   resolvePostRollPhase(state, events, player);
+}
+
+function resolvePayJailFineAction(state: GameState, events: GameEvent[], txns: TransactionEntry[]) {
+  if (state.phase !== "AWAITING_ROLL") {
+    throw new Error("Cannot pay jail fine in current phase.");
+  }
+
+  const player = getCurrentPlayer(state);
+  if (!player.inJail) {
+    throw new Error("Player is not in jail.");
+  }
+
+  const fine = state.board.rules.jailFine;
+  if (player.cash < fine) {
+    throw new Error("Insufficient cash to pay jail fine.");
+  }
+
+  transferCash(state, events, txns, fine, "Jail fine (manual)", player.id, undefined);
+  if (!player.bankrupt) {
+    player.inJail = false;
+    player.jailTurns = 0;
+    appendEvent(events, state, "JAIL_FINE", `${player.name} paid $${fine} to leave jail.`);
+  }
+}
+
+function resolveUseGetOutOfJailCardAction(state: GameState, events: GameEvent[]) {
+  if (state.phase !== "AWAITING_ROLL") {
+    throw new Error("Cannot use jail card in current phase.");
+  }
+
+  const player = getCurrentPlayer(state);
+  if (!player.inJail) {
+    throw new Error("Player is not in jail.");
+  }
+
+  if (player.getOutOfJailCards <= 0) {
+    throw new Error("No Get Out of Jail card available.");
+  }
+
+  player.getOutOfJailCards -= 1;
+  player.inJail = false;
+  player.jailTurns = 0;
+  appendEvent(events, state, "JAIL_EXIT", `${player.name} used a Get Out of Jail card.`);
 }
 
 function resolvePayRentAction(state: GameState, events: GameEvent[], txns: TransactionEntry[]) {
@@ -511,6 +628,7 @@ function resolvePurchaseAction(state: GameState, events: GameEvent[], txns: Tran
   transferCash(state, events, txns, price, `Purchase: ${tile.name}`, player.id, undefined);
   state.ownership[tile.id] = player.id;
   player.properties.push(tile.id);
+  state.propertyHouses[tile.id] = 1;
   state.pendingPurchase = undefined;
 
   appendEvent(events, state, "PROPERTY_PURCHASED", `${player.name} purchased ${tile.name} for $${price}.`);
@@ -561,6 +679,10 @@ function resolvePlaceAuctionBidAction(state: GameState, events: GameEvent[], pla
     throw new Error("Bid exceeds available cash.");
   }
 
+  if (amount % 10 !== 0) {
+    throw new Error("Bid amount must be in increments of 10.");
+  }
+
   state.auction.bids[playerId] = amount;
   appendEvent(events, state, "AUCTION_BID", `${bidder.name} submitted a bid of $${amount}.`);
 }
@@ -585,8 +707,6 @@ function resolveAuctionAction(state: GameState, events: GameEvent[], txns: Trans
       continue;
     }
 
-    state.auction.bids[participantId] = offered;
-
     if (offered > winningBid) {
       winningBid = offered;
       winner = player;
@@ -597,6 +717,7 @@ function resolveAuctionAction(state: GameState, events: GameEvent[], txns: Trans
     transferCash(state, events, txns, winningBid, `Auction win: ${tile.name}`, winner.id, undefined);
     state.ownership[tile.id] = winner.id;
     winner.properties.push(tile.id);
+    state.propertyHouses[tile.id] = 1;
     appendEvent(events, state, "AUCTION_WON", `${winner.name} won the auction for ${tile.name} at $${winningBid}.`);
   } else {
     appendEvent(events, state, "AUCTION_NO_BID", `No valid bids for ${tile.name}. Property remains unowned.`);
@@ -609,6 +730,209 @@ function resolveAuctionAction(state: GameState, events: GameEvent[], txns: Trans
     appendEvent(events, state, "DOUBLE_ROLL", `${currentPlayer.name} rolled doubles and gets another roll.`);
   }
   maybeFinalizeWinner(state, events);
+}
+
+function resolveBuildHouseAction(state: GameState, events: GameEvent[], txns: TransactionEntry[], tileId: string) {
+  if (state.phase !== "AWAITING_END_TURN") {
+    throw new Error("Houses can be built at end of turn.");
+  }
+
+  const player = getCurrentPlayer(state);
+  const tile = getTileById(state, tileId);
+  if (!tile) {
+    throw new Error("Property not found.");
+  }
+
+  if (tile.type !== "PROPERTY") {
+    throw new Error("Can only build houses on properties.");
+  }
+
+  if (state.ownership[tile.id] !== player.id) {
+    throw new Error("You do not own this property.");
+  }
+
+  const currentHouses = state.propertyHouses[tile.id] ?? 1;
+  if (currentHouses >= 5) {
+    throw new Error("Property is already at max development.");
+  }
+
+  const buildCost = getHouseCost(tile);
+  if (player.cash < buildCost) {
+    throw new Error("Insufficient cash to build house.");
+  }
+
+  transferCash(state, events, txns, buildCost, `Build house on ${tile.name}`, player.id, undefined);
+  state.propertyHouses[tile.id] = currentHouses + 1;
+  appendEvent(events, state, "HOUSE_BUILT", `${player.name} built on ${tile.name}. Houses: ${state.propertyHouses[tile.id]}.`);
+}
+
+function resolveTradeParties(state: GameState, trade: Pick<TradeOffer, "fromPlayerId" | "toPlayerId">) {
+  const fromPlayer = getPlayerById(state, trade.fromPlayerId);
+  const toPlayer = getPlayerById(state, trade.toPlayerId);
+  if (!fromPlayer || !toPlayer) {
+    throw new Error("Invalid trade participants.");
+  }
+  if (fromPlayer.bankrupt || toPlayer.bankrupt) {
+    throw new Error("Bankrupt players cannot trade.");
+  }
+  return { fromPlayer, toPlayer };
+}
+
+function resolveProposeTradeAction(
+  state: GameState,
+  events: GameEvent[],
+  tradeInput: {
+    fromPlayerId: string;
+    toPlayerId: string;
+    offeredCash: number;
+    requestedCash: number;
+    offeredTileIds: string[];
+    requestedTileIds: string[];
+  }
+) {
+  const offeredTileIds = uniqueIds(tradeInput.offeredTileIds);
+  const requestedTileIds = uniqueIds(tradeInput.requestedTileIds);
+  const offeredCash = Math.max(0, tradeInput.offeredCash);
+  const requestedCash = Math.max(0, tradeInput.requestedCash);
+
+  if (tradeInput.fromPlayerId === tradeInput.toPlayerId) {
+    throw new Error("Cannot trade with yourself.");
+  }
+
+  if (offeredCash === 0 && requestedCash === 0 && offeredTileIds.length === 0 && requestedTileIds.length === 0) {
+    throw new Error("Trade must include cash and/or properties.");
+  }
+
+  const { fromPlayer, toPlayer } = resolveTradeParties(state, tradeInput);
+
+  if (fromPlayer.cash < offeredCash) {
+    throw new Error("Insufficient cash for trade offer.");
+  }
+
+  for (const tileId of offeredTileIds) {
+    if (state.ownership[tileId] !== fromPlayer.id) {
+      throw new Error("You can only offer properties you own.");
+    }
+  }
+
+  for (const tileId of requestedTileIds) {
+    if (state.ownership[tileId] !== toPlayer.id) {
+      throw new Error("You can only request properties owned by the recipient.");
+    }
+  }
+
+  const trade: TradeOffer = {
+    id: crypto.randomUUID(),
+    fromPlayerId: fromPlayer.id,
+    toPlayerId: toPlayer.id,
+    offeredCash,
+    requestedCash,
+    offeredTileIds,
+    requestedTileIds,
+    createdAtTurn: state.turnNumber
+  };
+  state.pendingTrades.push(trade);
+
+  appendEvent(
+    events,
+    state,
+    "TRADE_PROPOSED",
+    `${fromPlayer.name} proposed a trade to ${toPlayer.name}.`
+  );
+}
+
+function resolveAcceptTradeAction(state: GameState, events: GameEvent[], txns: TransactionEntry[], tradeId: string, playerId: string) {
+  const trade = state.pendingTrades.find((entry) => entry.id === tradeId);
+  if (!trade) {
+    throw new Error("Trade not found.");
+  }
+
+  if (trade.toPlayerId !== playerId) {
+    throw new Error("Only the recipient can accept this trade.");
+  }
+
+  const { fromPlayer, toPlayer } = resolveTradeParties(state, trade);
+
+  if (fromPlayer.cash < trade.offeredCash) {
+    throw new Error("Trade proposer no longer has enough cash.");
+  }
+
+  if (toPlayer.cash < trade.requestedCash) {
+    throw new Error("Trade recipient no longer has enough cash.");
+  }
+
+  for (const tileId of trade.offeredTileIds) {
+    if (state.ownership[tileId] !== fromPlayer.id) {
+      throw new Error("Trade proposer no longer owns all offered properties.");
+    }
+  }
+
+  for (const tileId of trade.requestedTileIds) {
+    if (state.ownership[tileId] !== toPlayer.id) {
+      throw new Error("Trade recipient no longer owns all requested properties.");
+    }
+  }
+
+  if (trade.offeredCash > 0) {
+    transferCash(state, events, txns, trade.offeredCash, "Trade cash offer", fromPlayer.id, toPlayer.id);
+  }
+
+  if (trade.requestedCash > 0) {
+    transferCash(state, events, txns, trade.requestedCash, "Trade cash request", toPlayer.id, fromPlayer.id);
+  }
+
+  for (const tileId of trade.offeredTileIds) {
+    transferTile(state, tileId, fromPlayer, toPlayer);
+  }
+
+  for (const tileId of trade.requestedTileIds) {
+    transferTile(state, tileId, toPlayer, fromPlayer);
+  }
+
+  state.pendingTrades = state.pendingTrades.filter((entry) => entry.id !== tradeId);
+  appendEvent(events, state, "TRADE_ACCEPTED", `${toPlayer.name} accepted a trade from ${fromPlayer.name}.`);
+}
+
+function resolveRejectTradeAction(state: GameState, events: GameEvent[], tradeId: string, playerId: string) {
+  const trade = state.pendingTrades.find((entry) => entry.id === tradeId);
+  if (!trade) {
+    throw new Error("Trade not found.");
+  }
+
+  if (trade.toPlayerId !== playerId) {
+    throw new Error("Only the recipient can reject this trade.");
+  }
+
+  state.pendingTrades = state.pendingTrades.filter((entry) => entry.id !== tradeId);
+  const fromPlayer = getPlayerById(state, trade.fromPlayerId);
+  const toPlayer = getPlayerById(state, trade.toPlayerId);
+  appendEvent(
+    events,
+    state,
+    "TRADE_REJECTED",
+    `${toPlayer?.name ?? "Player"} rejected a trade from ${fromPlayer?.name ?? "player"}.`
+  );
+}
+
+function resolveCancelTradeAction(state: GameState, events: GameEvent[], tradeId: string, playerId: string) {
+  const trade = state.pendingTrades.find((entry) => entry.id === tradeId);
+  if (!trade) {
+    throw new Error("Trade not found.");
+  }
+
+  if (trade.fromPlayerId !== playerId) {
+    throw new Error("Only the proposer can cancel this trade.");
+  }
+
+  state.pendingTrades = state.pendingTrades.filter((entry) => entry.id !== tradeId);
+  const fromPlayer = getPlayerById(state, trade.fromPlayerId);
+  const toPlayer = getPlayerById(state, trade.toPlayerId);
+  appendEvent(
+    events,
+    state,
+    "TRADE_CANCELED",
+    `${fromPlayer?.name ?? "Player"} canceled a trade with ${toPlayer?.name ?? "player"}.`
+  );
 }
 
 function resolveEndTurnAction(state: GameState, events: GameEvent[]) {
@@ -650,7 +974,18 @@ export function applyGameAction(currentState: GameState, action: GameAction) {
   const events: GameEvent[] = [];
   const transactions: TransactionEntry[] = [];
 
+  if (!state.propertyHouses) {
+    state.propertyHouses = {};
+  }
+  if (!state.pendingTrades) {
+    state.pendingTrades = [];
+  }
+
   if (state.phase === "AWAITING_EFFECT_ACTIVATION" && !state.pendingEffect) {
+    state.phase = "AWAITING_END_TURN";
+  }
+
+  if (state.phase === "AWAITING_RENT_PAYMENT" && !state.pendingRent) {
     state.phase = "AWAITING_END_TURN";
   }
 
@@ -660,10 +995,24 @@ export function applyGameAction(currentState: GameState, action: GameAction) {
 
   if (action.type === "ROLL_DICE") {
     resolveRollAction(state, events, transactions, action.forcedDice);
+  } else if (action.type === "PAY_JAIL_FINE") {
+    resolvePayJailFineAction(state, events, transactions);
+  } else if (action.type === "USE_GET_OUT_OF_JAIL_CARD") {
+    resolveUseGetOutOfJailCardAction(state, events);
   } else if (action.type === "ACTIVATE_TILE_EFFECT") {
     resolveActivateTileEffectAction(state, events, transactions);
   } else if (action.type === "PAY_RENT") {
     resolvePayRentAction(state, events, transactions);
+  } else if (action.type === "BUILD_HOUSE") {
+    resolveBuildHouseAction(state, events, transactions, action.tileId);
+  } else if (action.type === "PROPOSE_TRADE") {
+    resolveProposeTradeAction(state, events, action);
+  } else if (action.type === "ACCEPT_TRADE") {
+    resolveAcceptTradeAction(state, events, transactions, action.tradeId, action.playerId);
+  } else if (action.type === "REJECT_TRADE") {
+    resolveRejectTradeAction(state, events, action.tradeId, action.playerId);
+  } else if (action.type === "CANCEL_TRADE") {
+    resolveCancelTradeAction(state, events, action.tradeId, action.playerId);
   } else if (action.type === "PLACE_AUCTION_BID") {
     resolvePlaceAuctionBidAction(state, events, action.playerId, action.amount);
   } else if (action.type === "PURCHASE_PROPERTY") {

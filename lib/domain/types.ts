@@ -121,6 +121,17 @@ export type AuctionState = {
   bids: Record<string, number>;
 };
 
+export type TradeOffer = {
+  id: string;
+  fromPlayerId: string;
+  toPlayerId: string;
+  offeredCash: number;
+  requestedCash: number;
+  offeredTileIds: string[];
+  requestedTileIds: string[];
+  createdAtTurn: number;
+};
+
 export type TransactionEntry = {
   id: string;
   turnNumber: number;
@@ -162,7 +173,9 @@ export type GameState = {
   pendingPurchase?: PendingPurchase;
   pendingEffect?: PendingEffect;
   pendingRent?: PendingRent;
+  propertyHouses: Record<string, number>;
   auction?: AuctionState;
+  pendingTrades: TradeOffer[];
   transactions: TransactionEntry[];
   logs: GameEvent[];
   winnerPlayerId?: string;
@@ -171,8 +184,23 @@ export type GameState = {
 
 export type GameAction =
   | { type: "ROLL_DICE"; forcedDice?: [number, number] }
+  | { type: "PAY_JAIL_FINE" }
+  | { type: "USE_GET_OUT_OF_JAIL_CARD" }
   | { type: "ACTIVATE_TILE_EFFECT" }
   | { type: "PAY_RENT" }
+  | { type: "BUILD_HOUSE"; tileId: string }
+  | {
+      type: "PROPOSE_TRADE";
+      fromPlayerId: string;
+      toPlayerId: string;
+      offeredCash: number;
+      requestedCash: number;
+      offeredTileIds: string[];
+      requestedTileIds: string[];
+    }
+  | { type: "ACCEPT_TRADE"; tradeId: string; playerId: string }
+  | { type: "REJECT_TRADE"; tradeId: string; playerId: string }
+  | { type: "CANCEL_TRADE"; tradeId: string; playerId: string }
   | { type: "PLACE_AUCTION_BID"; playerId: string; amount: number }
   | { type: "PURCHASE_PROPERTY" }
   | { type: "DECLINE_PROPERTY" }

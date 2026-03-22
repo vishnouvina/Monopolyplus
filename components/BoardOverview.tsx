@@ -1,5 +1,5 @@
 import { GameState } from "@/lib/domain/types";
-import { baseRent, isPurchasableTile, tileAccentColor, tilePrice } from "@/lib/board/display";
+import { isPurchasableTile, rentSchedule, tileAccentColor, tilePrice } from "@/lib/board/display";
 
 function tilePosition(index: number) {
   // Uneven lane distribution:
@@ -87,9 +87,20 @@ export function BoardOverview({ state, isRolling, rollingPreview }: { state: Gam
               <p className="center-card-kicker">{centerTitle}</p>
               <p className="center-card-title">{centerText}</p>
               {!pendingEffect && isPurchasableTile(currentTile) && (
-                <p className="center-card-row">
-                  Price: {tilePrice(currentTile) ? `$${tilePrice(currentTile)}` : "N/A"} | Base Rent: {baseRent(currentTile) ? `$${baseRent(currentTile)}` : "N/A"}
-                </p>
+                <>
+                  <p className="center-card-row">Price: {tilePrice(currentTile) ? `$${tilePrice(currentTile)}` : "N/A"}</p>
+                  <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-slate-700">
+                    {rentSchedule(currentTile).map((entry, index) => {
+                      const activeIndex = currentTile.type === "PROPERTY" ? Math.max(0, (state.propertyHouses?.[currentTile.id] ?? 1) - 1) : -1;
+                      const active = index === activeIndex;
+                      return (
+                        <p className={active ? "font-bold text-emerald-700" : ""} key={`${currentTile.id}-${entry.label}`}>
+                          {entry.label}: ${entry.amount}
+                        </p>
+                      );
+                    })}
+                  </div>
+                </>
               )}
               {!pendingEffect && currentTile.type === "TAX" && <p className="center-card-row">Tax: ${currentTile.taxAmount ?? 0}</p>}
               {!pendingEffect && isPurchasableTile(currentTile) && <p className="center-card-row">Owner: {currentTileOwner ? currentTileOwner.name : "Unowned"}</p>}

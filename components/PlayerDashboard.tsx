@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { baseRent, isPurchasableTile, tileAccentColor, tilePrice } from "@/lib/board/display";
+import { houseCostFromTile, isPurchasableTile, rentSchedule, tileAccentColor, tilePrice } from "@/lib/board/display";
 import { GameState } from "@/lib/domain/types";
 
 type PlayerPayload = {
@@ -26,11 +26,16 @@ type PlayerPayload = {
   };
   availableActions: {
     canRoll: boolean;
+    canProposeTrade: boolean;
+    canRespondTrade: boolean;
+    canPayJailFine: boolean;
+    canUseGetOutOfJailCard: boolean;
     canActivateEffect: boolean;
     canPayRent: boolean;
     canBuy: boolean;
     canDecline: boolean;
     canBidAuction: boolean;
+    canBuildHouse: boolean;
     canEndTurn: boolean;
   };
 };
@@ -40,6 +45,11 @@ export function PlayerDashboard({ accessToken }: { accessToken: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [auctionBidDraft, setAuctionBidDraft] = useState(0);
+  const [tradeTargetId, setTradeTargetId] = useState("");
+  const [tradeOfferCash, setTradeOfferCash] = useState(0);
+  const [tradeRequestCash, setTradeRequestCash] = useState(0);
+  const [offeredTileIds, setOfferedTileIds] = useState<string[]>([]);
+  const [requestedTileIds, setRequestedTileIds] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
     try {
@@ -67,18 +77,18 @@ export function PlayerDashboard({ accessToken }: { accessToken: string }) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function sendAction(type: "ROLL_DICE" | "ACTIVATE_TILE_EFFECT" | "PAY_RENT" | "PURCHASE_PROPERTY" | "DECLINE_PROPERTY" | "END_TURN") {
+  async function sendAction(action: Record<string, unknown>, delayMs = 260) {
     if (!payload) {
       return;
     }
 
     try {
       setPending(true);
-      await sleep(260);
+      await sleep(delayMs);
       const response = await fetch(`/api/games/${payload.gameId}/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type })
+        body: JSON.stringify(action)
       });
       const data = await response.json();
       if (!response.ok) {
@@ -126,30 +136,54 @@ export function PlayerDashboard({ accessToken }: { accessToken: string }) {
   const auctionTile = auction ? payload.state.board.tiles[auction.tileIndex] : undefined;
   const currentBid = auction?.bids[payload.player.id] ?? 0;
   const canBid = payload.availableActions.canBidAuction && Boolean(auction);
+  const tradePartners = payload.state.players.filter((player) => player.id !== payload.player.id && !player.bankrupt);
+  const effectiveTradeTargetId = tradeTargetId || tradePartners[0]?.id || "";
+  const selectedTradePartner = tradePartners.find((player) => player.id === effectiveTradeTargetId);
+  const incomingTrades = payload.state.pendingTrades.filter((trade) => trade.toPlayerId === payload.player.id);
+  const outgoingTrades = payload.state.pendingTrades.filter((trade) => trade.fromPlayerId === payload.player.id);
+
+  function toggleTile(selected: string[], tileId: string, setSelected: (values: string[]) => void) {
+    if (selected.includes(tileId)) {
+      setSelected(selected.filter((entry) => entry !== tileId));
+      return;
+    }
+    setSelected([...selected, tileId]);
+  }
+
+  function tileName(tileId: string): string {
+    return payload?.state.board.tiles.find((tileEntry) => tileEntry.id === tileId)?.name ?? tileId;
+  }
 
   async function submitAuctionBid() {
     if (!payload || !auction) {
       return;
     }
 
-    try {
-      setPending(true);
-      await sleep(180);
-      const response = await fetch(`/api/games/${payload.gameId}/action`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "PLACE_AUCTION_BID", playerId: payload.player.id, amount: auctionBidDraft })
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error ?? "Bid failed");
-      }
-      await refresh();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unknown bid error");
-    } finally {
-      setPending(false);
+    await sendAction({ type: "PLACE_AUCTION_BID", playerId: payload.player.id, amount: auctionBidDraft }, 180);
+  }
+
+  async function submitTradeOffer() {
+    if (!payload || !selectedTradePartner) {
+      return;
     }
+
+    await sendAction(
+      {
+        type: "PROPOSE_TRADE",
+        fromPlayerId: payload.player.id,
+        toPlayerId: selectedTradePartner.id,
+        offeredCash: tradeOfferCash,
+        requestedCash: tradeRequestCash,
+        offeredTileIds,
+        requestedTileIds
+      },
+      140
+    );
+
+    setTradeOfferCash(0);
+    setTradeRequestCash(0);
+    setOfferedTileIds([]);
+    setRequestedTileIds([]);
   }
 
   return (
@@ -173,6 +207,11 @@ export function PlayerDashboard({ accessToken }: { accessToken: string }) {
               ? `${payload.state.lastRoll.dieOne} + ${payload.state.lastRoll.dieTwo} = ${payload.state.lastRoll.total}`
               : "Roll to start your turn."}
           </p>
+          {payload.playerState.inJail && (
+            <p className="mt-2 text-sm font-semibold text-amber-700">
+              You are in jail. Choose to pay fine, use card, or roll for doubles.
+            </p>
+          )}
         </section>
       )}
 
@@ -184,8 +223,19 @@ export function PlayerDashboard({ accessToken }: { accessToken: string }) {
             <div className="bg-white p-3">
               <p className="mt-1 text-xl font-black leading-tight">{tile.name}</p>
               <p className="text-sm text-slate-700">Price: {tilePrice(tile) ? `$${tilePrice(tile)}` : "N/A"}</p>
-              <p className="text-sm text-slate-700">Base Rent: {baseRent(tile) ? `$${baseRent(tile)}` : "N/A"}</p>
+              {tile.type === "PROPERTY" && <p className="text-sm text-slate-700">Houses: {payload.state.propertyHouses?.[tile.id] ?? 1}</p>}
               <p className="text-sm text-slate-700">Owner: {currentTileOwner ? currentTileOwner.name : "Unowned"}</p>
+              <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-slate-700">
+                {rentSchedule(tile).map((entry, index) => {
+                  const activeIndex = tile.type === "PROPERTY" ? Math.max(0, (payload.state.propertyHouses?.[tile.id] ?? 1) - 1) : -1;
+                  const active = index === activeIndex;
+                  return (
+                    <p className={active ? "font-bold text-emerald-700" : ""} key={`${tile.id}-${entry.label}`}>
+                      {entry.label}: ${entry.amount}
+                    </p>
+                  );
+                })}
+              </div>
             </div>
           </div>
         ) : (
@@ -196,24 +246,178 @@ export function PlayerDashboard({ accessToken }: { accessToken: string }) {
       <section className="card mt-3 p-4">
         <h2 className="text-lg font-bold">Available Actions</h2>
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <button className={`btn ${payload.availableActions.canRoll ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canRoll || pending} onClick={() => sendAction("ROLL_DICE")}>
+          <button className={`btn ${payload.availableActions.canRoll ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canRoll || pending} onClick={() => sendAction({ type: "ROLL_DICE" })}>
             Roll
           </button>
-          <button className={`btn ${payload.availableActions.canActivateEffect ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canActivateEffect || pending} onClick={() => sendAction("ACTIVATE_TILE_EFFECT")}>
+          <button className={`btn ${payload.availableActions.canPayJailFine ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canPayJailFine || pending} onClick={() => sendAction({ type: "PAY_JAIL_FINE" })}>
+            Pay Jail Fine
+          </button>
+          <button
+            className={`btn ${payload.availableActions.canUseGetOutOfJailCard ? "btn-primary" : "btn-ghost"}`}
+            disabled={!payload.availableActions.canUseGetOutOfJailCard || pending}
+            onClick={() => sendAction({ type: "USE_GET_OUT_OF_JAIL_CARD" })}
+          >
+            Use Jail Card
+          </button>
+          <button className={`btn ${payload.availableActions.canActivateEffect ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canActivateEffect || pending} onClick={() => sendAction({ type: "ACTIVATE_TILE_EFFECT" })}>
             Activate
           </button>
-          <button className={`btn ${payload.availableActions.canPayRent ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canPayRent || pending} onClick={() => sendAction("PAY_RENT")}>
+          <button className={`btn ${payload.availableActions.canPayRent ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canPayRent || pending} onClick={() => sendAction({ type: "PAY_RENT" })}>
             Pay Rent
           </button>
-          <button className={`btn ${payload.availableActions.canBuy ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canBuy || pending} onClick={() => sendAction("PURCHASE_PROPERTY")}>
+          <button className={`btn ${payload.availableActions.canBuy ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canBuy || pending} onClick={() => sendAction({ type: "PURCHASE_PROPERTY" })}>
             Buy
           </button>
-          <button className={`btn ${payload.availableActions.canDecline ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canDecline || pending} onClick={() => sendAction("DECLINE_PROPERTY")}>
+          <button className={`btn ${payload.availableActions.canDecline ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canDecline || pending} onClick={() => sendAction({ type: "DECLINE_PROPERTY" })}>
             Decline
           </button>
-          <button className={`btn ${payload.availableActions.canEndTurn ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canEndTurn || pending} onClick={() => sendAction("END_TURN")}>
+          <button className={`btn ${payload.availableActions.canEndTurn ? "btn-primary" : "btn-ghost"}`} disabled={!payload.availableActions.canEndTurn || pending} onClick={() => sendAction({ type: "END_TURN" })}>
             End Turn
           </button>
+        </div>
+      </section>
+
+      <section className="card mt-3 p-4">
+        <h2 className="text-lg font-bold">Trading</h2>
+        <p className="mt-1 text-xs text-slate-600">You can trade anytime: cash and/or properties for cash and/or properties.</p>
+
+        <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3">
+          <p className="text-sm font-semibold">Create Trade Offer</p>
+          <label className="mt-2 block text-xs font-semibold text-slate-700">Trade Partner</label>
+          <select
+            className="input mt-1"
+            disabled={pending || !payload.availableActions.canProposeTrade || tradePartners.length === 0}
+            onChange={(event) => {
+              setTradeTargetId(event.target.value);
+              setRequestedTileIds([]);
+            }}
+            value={selectedTradePartner?.id ?? ""}
+          >
+            {tradePartners.length === 0 && <option value="">No valid players</option>}
+            {tradePartners.map((partner) => (
+              <option key={partner.id} value={partner.id}>
+                {partner.name}
+              </option>
+            ))}
+          </select>
+
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <label className="text-xs font-semibold text-slate-700">
+              You Offer Cash
+              <input
+                className="input mt-1"
+                min={0}
+                onChange={(event) => setTradeOfferCash(Math.max(0, Number(event.target.value) || 0))}
+                type="number"
+                value={tradeOfferCash}
+              />
+            </label>
+            <label className="text-xs font-semibold text-slate-700">
+              You Request Cash
+              <input
+                className="input mt-1"
+                min={0}
+                onChange={(event) => setTradeRequestCash(Math.max(0, Number(event.target.value) || 0))}
+                type="number"
+                value={tradeRequestCash}
+              />
+            </label>
+          </div>
+
+          <div className="mt-2 grid grid-cols-1 gap-2">
+            <div className="rounded border border-slate-200 bg-white p-2">
+              <p className="text-xs font-semibold text-slate-700">Your Properties to Offer</p>
+              <div className="mt-1 space-y-1">
+                {payload.playerState.properties.length === 0 && <p className="text-xs text-slate-500">No properties</p>}
+                {payload.playerState.properties.map((tileId) => (
+                  <label className="flex items-center gap-2 text-xs" key={`offer-${tileId}`}>
+                    <input
+                      checked={offeredTileIds.includes(tileId)}
+                      onChange={() => toggleTile(offeredTileIds, tileId, setOfferedTileIds)}
+                      type="checkbox"
+                    />
+                    {tileName(tileId)}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded border border-slate-200 bg-white p-2">
+              <p className="text-xs font-semibold text-slate-700">
+                {selectedTradePartner ? `${selectedTradePartner.name}'s Properties to Request` : "Requested Properties"}
+              </p>
+              <div className="mt-1 space-y-1">
+                {!selectedTradePartner && <p className="text-xs text-slate-500">Select a trade partner</p>}
+                {selectedTradePartner && selectedTradePartner.properties.length === 0 && <p className="text-xs text-slate-500">No properties</p>}
+                {selectedTradePartner?.properties.map((tileId) => (
+                  <label className="flex items-center gap-2 text-xs" key={`request-${tileId}`}>
+                    <input
+                      checked={requestedTileIds.includes(tileId)}
+                      onChange={() => toggleTile(requestedTileIds, tileId, setRequestedTileIds)}
+                      type="checkbox"
+                    />
+                    {tileName(tileId)}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <button
+            className={`btn mt-3 w-full ${payload.availableActions.canProposeTrade ? "btn-primary" : "btn-ghost"}`}
+            disabled={
+              pending ||
+              !payload.availableActions.canProposeTrade ||
+              !selectedTradePartner ||
+              tradeOfferCash > payload.playerState.cash ||
+              (tradeOfferCash === 0 && tradeRequestCash === 0 && offeredTileIds.length === 0 && requestedTileIds.length === 0)
+            }
+            onClick={submitTradeOffer}
+          >
+            Send Trade Offer
+          </button>
+          {tradeOfferCash > payload.playerState.cash && <p className="mt-1 text-xs text-red-700">Offered cash exceeds your current cash.</p>}
+        </div>
+
+        <div className="mt-3 space-y-2">
+          <p className="text-sm font-semibold">Incoming Offers</p>
+          {incomingTrades.length === 0 && <p className="text-xs text-slate-600">No incoming offers.</p>}
+          {incomingTrades.map((trade) => {
+            const from = payload.state.players.find((player) => player.id === trade.fromPlayerId);
+            return (
+              <div className="rounded border border-slate-200 bg-slate-50 p-2 text-xs" key={trade.id}>
+                <p className="font-semibold">{from?.name ?? "Player"} offered a trade</p>
+                <p>They offer: ${trade.offeredCash}{trade.offeredTileIds.length > 0 ? ` + ${trade.offeredTileIds.map(tileName).join(", ")}` : ""}</p>
+                <p>You give: ${trade.requestedCash}{trade.requestedTileIds.length > 0 ? ` + ${trade.requestedTileIds.map(tileName).join(", ")}` : ""}</p>
+                <div className="mt-2 flex gap-2">
+                  <button className="btn btn-primary" disabled={pending} onClick={() => sendAction({ type: "ACCEPT_TRADE", tradeId: trade.id, playerId: payload.player.id }, 120)}>
+                    Accept
+                  </button>
+                  <button className="btn btn-ghost" disabled={pending} onClick={() => sendAction({ type: "REJECT_TRADE", tradeId: trade.id, playerId: payload.player.id }, 120)}>
+                    Reject
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="mt-3 space-y-2">
+          <p className="text-sm font-semibold">Your Outgoing Offers</p>
+          {outgoingTrades.length === 0 && <p className="text-xs text-slate-600">No outgoing offers.</p>}
+          {outgoingTrades.map((trade) => {
+            const to = payload.state.players.find((player) => player.id === trade.toPlayerId);
+            return (
+              <div className="rounded border border-slate-200 bg-slate-50 p-2 text-xs" key={trade.id}>
+                <p className="font-semibold">Offer to {to?.name ?? "Player"}</p>
+                <p>You offer: ${trade.offeredCash}{trade.offeredTileIds.length > 0 ? ` + ${trade.offeredTileIds.map(tileName).join(", ")}` : ""}</p>
+                <p>You request: ${trade.requestedCash}{trade.requestedTileIds.length > 0 ? ` + ${trade.requestedTileIds.map(tileName).join(", ")}` : ""}</p>
+                <button className="btn btn-ghost mt-2" disabled={pending} onClick={() => sendAction({ type: "CANCEL_TRADE", tradeId: trade.id, playerId: payload.player.id }, 120)}>
+                  Cancel
+                </button>
+              </div>
+            );
+          })}
         </div>
       </section>
 
@@ -234,7 +438,13 @@ export function PlayerDashboard({ accessToken }: { accessToken: string }) {
             <div className="bg-white p-3">
               <p className="text-lg font-black leading-tight">{auctionTile.name}</p>
               <p className="text-sm text-slate-700">Price: {tilePrice(auctionTile) ? `$${tilePrice(auctionTile)}` : "N/A"}</p>
-              <p className="text-sm text-slate-700">Base Rent: {baseRent(auctionTile) ? `$${baseRent(auctionTile)}` : "N/A"}</p>
+              <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-slate-700">
+                {rentSchedule(auctionTile).map((entry) => (
+                  <p key={`${auctionTile.id}-${entry.label}`}>
+                    {entry.label}: ${entry.amount}
+                  </p>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -295,6 +505,15 @@ export function PlayerDashboard({ accessToken }: { accessToken: string }) {
               );
             }
 
+            const currentHouses = payload.state.propertyHouses?.[ownedTile.id] ?? 1;
+            const buildCost = houseCostFromTile(ownedTile);
+            const canBuildThisTurn =
+              isPlayersTurn &&
+              payload.availableActions.canBuildHouse &&
+              ownedTile.type === "PROPERTY" &&
+              currentHouses < 5 &&
+              payload.playerState.cash >= buildCost;
+
             return (
               <div className="overflow-hidden rounded border border-slate-200 bg-slate-50" key={tileId}>
                 <div className="h-2 w-full" style={{ backgroundColor: tileAccentColor(ownedTile) }} />
@@ -303,7 +522,27 @@ export function PlayerDashboard({ accessToken }: { accessToken: string }) {
                   <p className="text-xs text-slate-600">
                     {ownedTile.type}
                     {tilePrice(ownedTile) ? ` · $${tilePrice(ownedTile)}` : ""}
+                    {ownedTile.type === "PROPERTY" ? ` · Houses: ${currentHouses}` : ""}
                   </p>
+                  <div className="mt-2 grid grid-cols-1 gap-1 text-[11px] text-slate-700">
+                    {rentSchedule(ownedTile).map((entry, index) => {
+                      const active = ownedTile.type === "PROPERTY" && index === currentHouses - 1;
+                      return (
+                        <p className={active ? "font-bold text-emerald-700" : ""} key={`${ownedTile.id}-${entry.label}`}>
+                          {entry.label}: ${entry.amount}
+                        </p>
+                      );
+                    })}
+                  </div>
+                  {ownedTile.type === "PROPERTY" && (
+                    <button
+                      className={`btn mt-2 w-full ${canBuildThisTurn ? "btn-primary" : "btn-ghost"}`}
+                      disabled={!canBuildThisTurn || pending}
+                      onClick={() => sendAction({ type: "BUILD_HOUSE", tileId: ownedTile.id }, 180)}
+                    >
+                      Build House (+1) ${buildCost}
+                    </button>
+                  )}
                 </div>
               </div>
             );
