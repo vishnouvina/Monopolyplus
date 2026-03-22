@@ -176,12 +176,17 @@ export async function applyActionToGame(gameId: string, rawAction: unknown) {
 
   const currentState = gameStateSchema.parse(game.state);
   const result = applyGameAction(currentState, parsedAction);
+  const snapshotState = {
+    ...result.state,
+    logs: result.state.logs.slice(-200),
+    transactions: result.state.transactions.slice(-200)
+  };
 
   await prisma.$transaction(async (tx) => {
     await tx.game.update({
       where: { id: game.id },
       data: {
-        state: toJsonValue(result.state),
+        state: toJsonValue(snapshotState),
         status: result.state.phase === "GAME_OVER" ? GameStatus.FINISHED : GameStatus.IN_PROGRESS
       }
     });

@@ -382,6 +382,9 @@ export function PlayerDashboard({ accessToken }: { accessToken: string }) {
         <div className="mt-3 space-y-2">
           <p className="text-sm font-semibold">Incoming Offers</p>
           {incomingTrades.length === 0 && <p className="text-xs text-slate-600">No incoming offers.</p>}
+          {!payload.availableActions.canRespondTrade && incomingTrades.length > 0 && (
+            <p className="text-xs text-slate-600">You cannot respond to trades right now.</p>
+          )}
           {incomingTrades.map((trade) => {
             const from = payload.state.players.find((player) => player.id === trade.fromPlayerId);
             return (
@@ -390,10 +393,14 @@ export function PlayerDashboard({ accessToken }: { accessToken: string }) {
                 <p>They offer: ${trade.offeredCash}{trade.offeredTileIds.length > 0 ? ` + ${trade.offeredTileIds.map(tileName).join(", ")}` : ""}</p>
                 <p>You give: ${trade.requestedCash}{trade.requestedTileIds.length > 0 ? ` + ${trade.requestedTileIds.map(tileName).join(", ")}` : ""}</p>
                 <div className="mt-2 flex gap-2">
-                  <button className="btn btn-primary" disabled={pending} onClick={() => sendAction({ type: "ACCEPT_TRADE", tradeId: trade.id, playerId: payload.player.id }, 120)}>
+                  <button
+                    className={`btn ${payload.availableActions.canRespondTrade ? "btn-primary" : "btn-ghost"}`}
+                    disabled={pending || !payload.availableActions.canRespondTrade}
+                    onClick={() => sendAction({ type: "ACCEPT_TRADE", tradeId: trade.id, playerId: payload.player.id }, 120)}
+                  >
                     Accept
                   </button>
-                  <button className="btn btn-ghost" disabled={pending} onClick={() => sendAction({ type: "REJECT_TRADE", tradeId: trade.id, playerId: payload.player.id }, 120)}>
+                  <button className="btn btn-ghost" disabled={pending || !payload.availableActions.canRespondTrade} onClick={() => sendAction({ type: "REJECT_TRADE", tradeId: trade.id, playerId: payload.player.id }, 120)}>
                     Reject
                   </button>
                 </div>

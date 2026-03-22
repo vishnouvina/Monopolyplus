@@ -166,8 +166,6 @@ export type GameState = {
   currentPlayerIndex: number;
   turnNumber: number;
   phase: TurnPhase;
-  chancePointer: number;
-  communityPointer: number;
   ownership: Record<string, string>;
   lastRoll?: DiceRoll;
   pendingPurchase?: PendingPurchase;
@@ -179,6 +177,7 @@ export type GameState = {
   transactions: TransactionEntry[];
   logs: GameEvent[];
   winnerPlayerId?: string;
+  // Reserved extension point for future RPG-lite/global modifiers.
   futureModifiers: FutureRuleModifier[];
 };
 

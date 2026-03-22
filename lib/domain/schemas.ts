@@ -122,8 +122,6 @@ export const gameStateSchema = z.object({
     "AWAITING_END_TURN",
     "GAME_OVER"
   ]),
-  chancePointer: z.number().int(),
-  communityPointer: z.number().int(),
   ownership: z.record(z.string()),
   lastRoll: z
     .object({

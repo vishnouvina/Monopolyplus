@@ -21,8 +21,6 @@ export function createInitialGameState(input: CreateGameInput): GameState {
     currentPlayerIndex: 0,
     turnNumber: 1,
     phase: "AWAITING_ROLL",
-    chancePointer: 0,
-    communityPointer: 0,
     ownership: {},
     transactions: [],
     logs: [],
